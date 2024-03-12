@@ -113,8 +113,8 @@ class InputBuffer_Atari(gym.Wrapper):
             this_frame_action = self.env.action_space.sample()
 
         
-        print('current action = ' + str(action))
-        print('this_frame_action action = ' + str(this_frame_action))
+        #print('current action = ' + str(action))
+        #print('this_frame_action action = ' + str(this_frame_action))
         self._input_buf.append(action)
         
         return self.env.step(this_frame_action)
