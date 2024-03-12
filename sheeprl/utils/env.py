@@ -9,6 +9,7 @@ import numpy as np
 
 from sheeprl.envs.wrappers import (
     ActionRepeat,
+    InputBuffer_Atari,
     FrameStack,
     GrayscaleRenderWrapper,
     MaskVelocityWrapper,
@@ -74,10 +75,19 @@ def make_env(
         # action repeat
         if (
             cfg.env.action_repeat > 1
+            and cfg.env.input_buffer == 0
             and "atari" not in env_spec
             and (not (_IS_DIAMBRA_ARENA_AVAILABLE and _IS_DIAMBRA_AVAILABLE) or not isinstance(env, DiambraWrapper))
         ):
             env = ActionRepeat(env, cfg.env.action_repeat)
+            print('using action repeat')
+
+        if (
+            "atari" in env_spec
+            and cfg.env.input_buffer and cfg.env.input_buffer > 0
+        ):
+            env = InputBuffer_Atari(env, cfg.env.input_buffer)
+            print('using InputBuffer_Atari')
 
         if "mask_velocities" in cfg.env and cfg.env.mask_velocities:
             env = MaskVelocityWrapper(env)

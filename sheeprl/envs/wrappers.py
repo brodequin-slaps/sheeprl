@@ -68,6 +68,57 @@ class ActionRepeat(gym.Wrapper):
             current_step += 1
         return obs, total_reward, done, truncated, info
 
+class RingBuffer:
+    def __init__(self, capacity):
+        self.capacity = capacity
+        self.data = [None] * capacity
+        self.size = 0
+        self.start = 0
+
+    def __len__(self):
+        return self.size
+
+    def append(self, item):
+        if self.size < self.capacity:
+            self.data[(self.start + self.size) % self.capacity] = item
+            self.size += 1
+        else:
+            self.data[self.start] = item
+            self.start = (self.start + 1) % self.capacity
+
+    def get(self, index):
+        if index < 0 or index >= self.size:
+            raise IndexError("Index out of range")
+        return self.data[(self.start + index) % self.capacity]
+
+class InputBuffer_Atari(gym.Wrapper):
+    def __init__(self, env: gym.Env, input_buffer_amount: int = 0):
+        super().__init__(env)
+        if input_buffer_amount <= 0:
+            raise ValueError("`amount` should be a positive integer")
+        self._input_buffer_amount = input_buffer_amount
+        self._input_buf = RingBuffer(input_buffer_amount)
+
+    @property
+    def input_buf_len(self) -> int:
+        return self._input_buffer_amount
+    
+    def __getattr__(self, name):
+        return getattr(self.env, name)
+    
+    def step(self, action):
+        if self._input_buf.size == self._input_buf.capacity:
+            this_frame_action = self._input_buf.get(0)
+        else:
+            this_frame_action = self.env.action_space.sample()
+
+        
+        print('current action = ' + str(action))
+        print('this_frame_action action = ' + str(this_frame_action))
+        self._input_buf.append(action)
+        
+        return self.env.step(this_frame_action)
+
 
 class RestartOnException(gym.Wrapper):
     def __init__(self, env_fn: Callable[..., gym.Env], exceptions=(Exception,), window=300, maxfails=2, wait=20):
