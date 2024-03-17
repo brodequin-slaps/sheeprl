@@ -1,0 +1,32 @@
+# @package _global_
+
+defaults:
+  - dreamer_v3
+  - override /algo: dreamer_v3_S
+  - override /env: atari
+  - _self_
+
+# Experiment
+seed: 5
+
+# Environment
+env:
+  num_envs: 12
+  max_episode_steps: 27000
+  id: MsPacmanNoFrameskip-v4
+
+# Checkpoint
+checkpoint:
+  every: 2000
+
+# Buffer
+buffer:
+  size: 1200000 # 12*100000=600000
+  checkpoint: True
+
+# Algorithm
+algo:
+  learning_starts: 1024
+  total_steps: 1200000 # 12*100000=600000
+  train_every: 12 # 1*12=12 (dreamer_v3.py:546)
+  per_rank_batch_size: 32
