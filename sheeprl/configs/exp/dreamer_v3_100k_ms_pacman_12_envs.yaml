@@ -29,4 +29,4 @@ algo:
   learning_starts: 1024
   total_steps: 1200000 # 12*100000=600000
   train_every: 12 # 1*12=12 (dreamer_v3.py:546)
-  per_rank_batch_size: 32
+  per_rank_batch_size: 28
