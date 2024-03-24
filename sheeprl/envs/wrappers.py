@@ -7,6 +7,8 @@ import gymnasium as gym
 import numpy as np
 from gymnasium.core import Env, RenderFrame
 
+import gymnasium.spaces as spaces
+
 
 class MaskVelocityWrapper(gym.ObservationWrapper):
     """
@@ -119,6 +121,143 @@ class InputBuffer_Atari(gym.Wrapper):
         
         return self.env.step(this_frame_action)
 
+# like InputBuffer but we feed input buffer as observation
+class InputBufferWtihActionsAsInput_Atari(gym.Wrapper):
+    def __init__(self, env: gym.Env, input_buffer_amount: int = 0):
+        super().__init__(env)
+        if input_buffer_amount <= 0:
+            raise ValueError("`amount` should be a positive integer")
+        self._input_buffer_amount = input_buffer_amount
+        self._input_buf = deque(maxlen=input_buffer_amount)
+        self.observation_space = gym.spaces.Dict({
+                "rgb": self.env.observation_space,
+                #"last_action": self.env.action_space
+                #"actions": gym.spaces.Box(shape=(self.env.action_space.shape, input_buffer_amount), dtype=np.int64)
+                #"actions": gym.spaces.Box([self.env.action_space] * input_buffer_amount)
+                "actions": gym.spaces.Tuple([self.env.action_space] * input_buffer_amount)
+            })
+        
+
+    #@property
+    #def input_buf_len(self) -> int:
+    #    return self._input_buffer_amount
+    
+    #def __getattr__(self, name):
+    #    return getattr(self.env, name)
+
+    def reset(self, **kwargs):
+        obs, infos = super().reset(**kwargs)
+        
+        while len(self._input_buf) < self._input_buf.maxlen:
+            self._input_buf.append(self.env.action_space.sample())
+        
+        return self.get_obs(obs), infos
+    
+    def get_obs(self, observation: Any) -> Any:
+        #observation['past_actions'] = spaces.Space(list(self._input_buf))
+        return {
+            "rgb": observation,
+            #"last_action": self._input_buf[0]
+            #"actions": np.array(self._input_buf, dtype=np.int64)
+            "actions": self._input_buf
+        }
+        #return observation
+        #return spaces.Dict({
+            #"rgb": observation,})
+            #"past_actions": self._input_buf})
+
+    def step(self, action):        
+        this_frame_action = self._input_buf[0]
+
+        #print('current action = ' + str(action))
+        #print('this_frame_action action = ' + str(this_frame_action))
+        self._input_buf.append(action)
+        
+        obs, reward, done, truncated, infos = self.env.step(this_frame_action)
+
+        #obs = self._get_obs(obs)
+
+        return self.get_obs(obs), reward, done, truncated, infos
+
+
+class InputBufferWtihActionsAsInput_Atari_v2(gym.Wrapper):
+    def __init__(self, env: gym.Env, input_buffer_amount: int = 0):
+        super().__init__(env)
+        if input_buffer_amount <= 0:
+            raise ValueError("`amount` should be a positive integer")
+        self._input_buffer_amount = input_buffer_amount
+        self._input_buf = deque(maxlen=input_buffer_amount)
+        self.observation_space = gym.spaces.Dict({
+                "rgb": self.env.observation_space,
+                #"last_action": self.env.action_space
+                #"actions": gym.spaces.Box(shape=(self.env.action_space.shape, input_buffer_amount), dtype=np.int64)
+                #"actions": gym.spaces.Box([self.env.action_space] * input_buffer_amount)
+                "actions_0": gym.spaces.Box(low=0, high=8, shape=(1,), dtype=np.int8),
+                "actions_1": gym.spaces.Box(low=0, high=8, shape=(1,), dtype=np.int8),
+                "actions_2": gym.spaces.Box(low=0, high=8, shape=(1,), dtype=np.int8),
+                "actions_3": gym.spaces.Box(low=0, high=8, shape=(1,), dtype=np.int8),
+                "actions_4": gym.spaces.Box(low=0, high=8, shape=(1,), dtype=np.int8),
+                "actions_5": gym.spaces.Box(low=0, high=8, shape=(1,), dtype=np.int8),
+                "actions_6": gym.spaces.Box(low=0, high=8, shape=(1,), dtype=np.int8),
+                "actions_7": gym.spaces.Box(low=0, high=8, shape=(1,), dtype=np.int8),
+                "actions_8": gym.spaces.Box(low=0, high=8, shape=(1,), dtype=np.int8),
+                "actions_9": gym.spaces.Box(low=0, high=8, shape=(1,), dtype=np.int8),
+                "actions_10": gym.spaces.Box(low=0, high=8, shape=(1,), dtype=np.int8),
+                "actions_11": gym.spaces.Box(low=0, high=8, shape=(1,), dtype=np.int8),
+            })
+        
+
+    #@property
+    #def input_buf_len(self) -> int:
+    #    return self._input_buffer_amount
+    
+    #def __getattr__(self, name):
+    #    return getattr(self.env, name)
+
+    def reset(self, **kwargs):
+        obs, infos = super().reset(**kwargs)
+        
+        while len(self._input_buf) < self._input_buf.maxlen:
+            self._input_buf.append(self.env.action_space.sample())
+        
+        return self.get_obs(obs), infos
+    
+    def get_obs(self, observation: Any) -> Any:
+        #observation['past_actions'] = spaces.Space(list(self._input_buf))
+        return {
+            "rgb": observation,
+            #"last_action": self._input_buf[0]
+            #"actions": np.array(self._input_buf, dtype=np.int64)
+            "actions_0": self._input_buf[0],
+            "actions_1": self._input_buf[1],
+            "actions_2": self._input_buf[2],
+            "actions_3": self._input_buf[3],
+            "actions_4": self._input_buf[4],
+            "actions_5": self._input_buf[5],
+            "actions_6": self._input_buf[6],
+            "actions_7": self._input_buf[7],
+            "actions_8": self._input_buf[8],
+            "actions_9": self._input_buf[9],
+            "actions_10": self._input_buf[10],
+            "actions_11": self._input_buf[11],
+        }
+        #return observation
+        #return spaces.Dict({
+            #"rgb": observation,})
+            #"past_actions": self._input_buf})
+
+    def step(self, action):        
+        this_frame_action = self._input_buf[0]
+
+        #print('current action = ' + str(action))
+        #print('this_frame_action action = ' + str(this_frame_action))
+        self._input_buf.append(action)
+        
+        obs, reward, done, truncated, infos = self.env.step(this_frame_action)
+
+        #obs = self._get_obs(obs)
+
+        return self.get_obs(obs), reward, done, truncated, infos
 
 class RestartOnException(gym.Wrapper):
     def __init__(self, env_fn: Callable[..., gym.Env], exceptions=(Exception,), window=300, maxfails=2, wait=20):

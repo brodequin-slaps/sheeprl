@@ -1,0 +1,36 @@
+# @package _global_
+
+defaults:
+  - dreamer_v3
+  - override /algo: dreamer_v3_S
+  - override /env: atari
+  - _self_
+
+# Experiment
+seed: 5
+
+# Environment
+env:
+  num_envs: 6
+  max_episode_steps: 27000
+  id: MsPacmanNoFrameskip-v4
+  input_buffer: 12 # 30 did not work so try 10 (12*4 = 48 < sequence length = 64 so it should learn) ....old: it already has action repeat to 4 so it should be 3. try with 12 anyway to see
+  use_input_buf_as_obs: True
+
+# Checkpoint
+checkpoint:
+  every: 2000
+
+# Buffer
+buffer:
+  size: 100000
+  checkpoint: True
+
+# Algorithm
+algo:
+  learning_starts: 1024
+  total_steps: 600000
+  train_every: 6
+  per_rank_batch_size: 16
+  mlp_keys:
+    encoder: [actions_0, actions_1, actions_2, actions_3, actions_4, actions_5, actions_6, actions_7, actions_8, actions_9, actions_10, actions_11]

@@ -10,6 +10,8 @@ import numpy as np
 from sheeprl.envs.wrappers import (
     ActionRepeat,
     InputBuffer_Atari,
+    InputBufferWtihActionsAsInput_Atari,
+    InputBufferWtihActionsAsInput_Atari_v2,
     FrameStack,
     GrayscaleRenderWrapper,
     MaskVelocityWrapper,
@@ -84,10 +86,15 @@ def make_env(
 
         if (
             "atari" in env_spec
-            and cfg.env.input_buffer and cfg.env.input_buffer > 0
         ):
-            env = InputBuffer_Atari(env, cfg.env.input_buffer)
-            print('using InputBuffer_Atari')
+            if cfg.env.input_buffer and cfg.env.input_buffer > 0:
+                if cfg.env.use_input_buf_as_obs and cfg.env.use_input_buf_as_obs == True:
+                    #env = InputBufferWtihActionsAsInput_Atari(env, cfg.env.input_buffer)
+                    env = InputBufferWtihActionsAsInput_Atari_v2(env, cfg.env.input_buffer)
+                    print('using InputBufferWtihActionsAsInput_Atari')
+                else:
+                    env = InputBuffer_Atari(env, cfg.env.input_buffer)
+                    print('using InputBuffer_Atari')
 
         if "mask_velocities" in cfg.env and cfg.env.mask_velocities:
             env = MaskVelocityWrapper(env)
