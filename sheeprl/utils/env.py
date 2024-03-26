@@ -9,6 +9,7 @@ import numpy as np
 
 from sheeprl.envs.wrappers import (
     ActionRepeat,
+    ActionsAsObservationWrapper,
     InputBuffer_Atari,
     InputBufferWtihActionsAsInput_Atari,
     InputBufferWtihActionsAsInput_Atari_v2,
@@ -224,6 +225,15 @@ def make_env(
                 )
             env = FrameStack(env, cfg.env.frame_stack, cnn_keys, cfg.env.frame_stack_dilation)
 
+        
+        if cfg.env.action_stack > 0:
+            if cfg.env.action_stack_dilation <= 0:
+                raise ValueError(
+                    "The actions stack dilation argument must be greater than zero, "
+                    f"got: {cfg.env.action_stack_dilation}"
+                )
+            env = ActionsAsObservationWrapper(env, cfg.env.action_stack, cfg.env.action_stack_dilation)
+
         if cfg.env.reward_as_observation:
             env = RewardAsObservationWrapper(env)
 
@@ -242,6 +252,7 @@ def make_env(
         return env
 
     return thunk
+
 
 
 def get_dummy_env(id: str):
