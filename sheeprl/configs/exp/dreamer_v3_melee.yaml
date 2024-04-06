@@ -1,0 +1,44 @@
+# @package _global_
+
+defaults:
+  - dreamer_v3
+  - override /algo: dreamer_v3_XL
+  - override /env: melee
+  - _self_
+
+# Experiment
+seed: 5
+
+# Environment
+env:
+  num_envs: 1
+  max_episode_steps: 6000
+  id: melee
+  action_stack: 0
+  action_stack_dilation: 0
+  capture_video: False
+
+# Checkpoint
+checkpoint:
+  every: 10000
+
+# Buffer
+buffer:
+  size: 100000
+  checkpoint: True
+
+# Algorithm
+algo:
+  learning_starts: 1024
+  total_steps: 10000000
+  train_every: 1
+  per_rank_batch_size: 32
+  per_rank_sequence_length: 64
+  cnn_keys:
+    encoder: []
+    decoder: []
+  mlp_keys:
+    encoder: [one_hot_p1, int_obs_p1, float_obs_p1, one_hot_p2, int_obs_p2, float_obs_p2]
+
+fabric:
+  precision: 32

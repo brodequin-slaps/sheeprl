@@ -1,0 +1,40 @@
+# @package _global_
+
+defaults:
+  - dreamer_v3
+  - override /algo: dreamer_v3_XXL
+  - override /env: atari
+  - _self_
+
+# Experiment
+seed: 6
+
+# Environment
+env:
+  num_envs: 6
+  max_episode_steps: 27000
+  id: MsPacmanNoFrameskip-v4
+  action_stack: 12
+  action_stack_dilation: 1
+
+# Checkpoint
+checkpoint:
+  every: 10000
+
+# Buffer
+buffer:
+  size: 100000
+  checkpoint: True
+
+# Algorithm
+algo:
+  learning_starts: 10000
+  total_steps: 1200000
+  train_every: 6
+  per_rank_batch_size: 16
+  per_rank_sequence_length: 64
+  mlp_keys:
+    encoder: [action_stack]
+
+fabric:
+  precision: 32

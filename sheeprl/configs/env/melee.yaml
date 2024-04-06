@@ -1,0 +1,11 @@
+defaults:
+  - default
+  - _self_
+
+id: melee
+
+wrapper:
+  _target_: sheeprl.envs.melee.MeleeWrapper
+  id: ${env.id}
+  #screen_size: ${env.screen_size}
+  seed: ${seed}
