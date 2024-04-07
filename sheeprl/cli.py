@@ -186,6 +186,103 @@ def run_algorithm(cfg: Dict[str, Any]):
     fabric.launch(reproducible(command), cfg, **kwargs)
 
 
+def get_trained_agent_inner(cfg: DictConfig):
+    """Returns the trained agent for that config,
+        ready to execute actions from obs.
+
+    Args:
+        cfg (DictConfig): the loaded configuration.
+    """
+    cfg = dotdict(OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True))
+
+    # Torch settings
+    os.environ["OMP_NUM_THREADS"] = str(cfg.num_threads)
+    torch.set_float32_matmul_precision(cfg.float32_matmul_precision)
+
+    accelerator = cfg.fabric.get("accelerator", "auto")
+    fabric: Fabric = hydra.utils.instantiate(
+        cfg.fabric, accelerator=accelerator, devices=1, num_nodes=1, _convert_="all"
+    )
+
+    # Seed everything
+    fabric.seed_everything(cfg.seed)
+
+    # Load the checkpoint
+    state = fabric.load(cfg.checkpoint_path)
+
+    # Given the algorithm's name, retrieve the module where
+    # 'cfg.algo.name'.py is contained; from there retrieve the
+    # `register_algorithm`-decorated entrypoint;
+    # the entrypoint will be launched by Fabric with `fabric.launch(entrypoint)`
+    module = None
+    entrypoint = 'get_trained_agent'
+    evaluation_file = None
+    algo_name = cfg.algo.name
+    for _module, _algos in evaluation_registry.items():
+        for _algo in _algos:
+            if algo_name == _algo["name"]:
+                module = _module
+                evaluation_file = _algo["evaluation_file"]
+                break
+    if module is None:
+        raise RuntimeError(f"Given the algorithm named `{algo_name}`, no module has been found to be imported.")
+
+    if evaluation_file is None:
+        raise RuntimeError(
+            f"Given the module and algorithm named `{module}` and `{algo_name}` respectively, "
+            "no evaluation file has been found to be imported."
+        )
+    
+    task = importlib.import_module(f"{module}.{evaluation_file}")
+    command = task.__dict__[entrypoint]
+
+    def no_grad(func):
+            def wrapper(*args, **kwargs):
+                with torch.no_grad():
+                    return func(*args, **kwargs)
+
+            return wrapper
+    command = no_grad(command)
+    return fabric.launch(command, cfg, state)
+
+
+def get_trained_agent_entrypoint(cfg):
+    # Load the checkpoint configuration
+    checkpoint_path = Path(os.path.abspath(cfg.checkpoint_path))
+    ckpt_cfg = OmegaConf.load(checkpoint_path.parent.parent / "config.yaml")
+    ckpt_cfg.pop("seed", None)
+
+    # Merge the two configs
+    with open_dict(cfg):
+        capture_video = getattr(cfg.env, "capture_video", False)
+        cfg.env = {"capture_video": capture_video, "num_envs": 1}
+        cfg.exp = {}
+        cfg.algo = {}
+        cfg.fabric = {
+            "devices": 1,
+            "num_nodes": 1,
+            "strategy": "auto",
+            "accelerator": getattr(cfg.fabric, "accelerator", "auto"),
+        }
+        cfg.root_dir = str(checkpoint_path.parent.parent.parent.parent)
+
+        # Merge configs
+        ckpt_cfg.merge_with(cfg)
+
+        # Update values after merge
+        run_name = Path(
+            os.path.join(
+                os.path.basename(checkpoint_path.parent.parent.parent),
+                os.path.basename(checkpoint_path.parent.parent),
+                "evaluation",
+            )
+        )
+        ckpt_cfg.run_name = str(run_name)
+
+    # Check the validity of the configuration and run the evaluation
+    check_configs_evaluation(ckpt_cfg)
+    return get_trained_agent_inner(ckpt_cfg), dotdict(OmegaConf.to_container(ckpt_cfg, resolve=True, throw_on_missing=True))
+
 def eval_algorithm(cfg: DictConfig):
     """Run the algorithm specified in the configuration.
 

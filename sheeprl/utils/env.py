@@ -226,7 +226,7 @@ def make_env(
             env = FrameStack(env, cfg.env.frame_stack, cnn_keys, cfg.env.frame_stack_dilation)
 
         
-        if cfg.env.action_stack > 0:
+        if cfg.env.action_stack and cfg.env.action_stack > 0:
             if cfg.env.action_stack_dilation <= 0:
                 raise ValueError(
                     "The actions stack dilation argument must be greater than zero, "

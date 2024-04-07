@@ -12,6 +12,9 @@ from sheeprl.utils.env import make_env
 from sheeprl.utils.imports import _IS_MLFLOW_AVAILABLE
 from sheeprl.utils.utils import unwrap_fabric
 
+from sheeprl.utils.timer import timer
+from torchmetrics import MaxMetric
+
 if TYPE_CHECKING:
     from mlflow.models.model import ModelInfo
 
@@ -116,9 +119,11 @@ def test(
                 preprocessed_obs[k] = v[None, ...].to(device) / 255 - 0.5
             elif k in cfg.algo.mlp_keys.encoder:
                 preprocessed_obs[k] = v[None, ...].to(device)
-        real_actions = player.get_greedy_action(
-            preprocessed_obs, sample_actions, {k: v for k, v in preprocessed_obs.items() if k.startswith("mask")}
-        )
+
+        with timer("env_inference_time", MaxMetric):
+            real_actions = player.get_greedy_action(
+                preprocessed_obs, sample_actions, {k: v for k, v in preprocessed_obs.items() if k.startswith("mask")}
+            )
         if player.actor.is_continuous:
             real_actions = torch.cat(real_actions, -1).cpu().numpy()
         else:
@@ -133,6 +138,11 @@ def test(
     fabric.print("Test - Reward:", cumulative_rew)
     if cfg.metric.log_level > 0 and len(fabric.loggers) > 0:
         fabric.logger.log_metrics({"Test/cumulative_reward": cumulative_rew}, 0)
+   
+    metrics = timer.compute()
+    if "env_inference_time" in metrics:
+        print('minmax inference time = ' + str(metrics["env_inference_time"]))
+
     env.close()
 
 
