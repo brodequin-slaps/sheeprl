@@ -246,6 +246,40 @@ def get_trained_agent_inner(cfg: DictConfig):
     return fabric.launch(command, cfg, state)
 
 
+def sam_build_config(cfg):
+    checkpoint_path = Path(os.path.abspath(cfg.checkpoint_path))
+    ckpt_cfg = OmegaConf.load(checkpoint_path.parent.parent / "config.yaml")
+    ckpt_cfg.pop("seed", None)
+
+    with open_dict(cfg):
+        capture_video = getattr(cfg.env, "capture_video", False)
+        cfg.env = {"capture_video": capture_video, "num_envs": 1}
+        cfg.exp = {}
+        cfg.algo = {}
+        cfg.fabric = {
+            "devices": 1,
+            "num_nodes": 1,
+            "strategy": "auto",
+            "accelerator": getattr(cfg.fabric, "accelerator", "auto"),
+        }
+        cfg.root_dir = str(checkpoint_path.parent.parent.parent.parent)
+
+        # Merge configs
+        ckpt_cfg.merge_with(cfg)
+
+        # Update values after merge
+        run_name = Path(
+            os.path.join(
+                os.path.basename(checkpoint_path.parent.parent.parent),
+                os.path.basename(checkpoint_path.parent.parent),
+                "evaluation",
+            )
+        )
+        ckpt_cfg.run_name = str(run_name)
+    
+    check_configs_evaluation(ckpt_cfg)
+    return dotdict(OmegaConf.to_container(ckpt_cfg, resolve=True, throw_on_missing=True))
+
 def get_trained_agent_entrypoint(cfg):
     # Load the checkpoint configuration
     checkpoint_path = Path(os.path.abspath(cfg.checkpoint_path))
@@ -281,7 +315,7 @@ def get_trained_agent_entrypoint(cfg):
 
     # Check the validity of the configuration and run the evaluation
     check_configs_evaluation(ckpt_cfg)
-    return get_trained_agent_inner(ckpt_cfg), dotdict(OmegaConf.to_container(ckpt_cfg, resolve=True, throw_on_missing=True))
+    return get_trained_agent_inner(ckpt_cfg)
 
 def eval_algorithm(cfg: DictConfig):
     """Run the algorithm specified in the configuration.
