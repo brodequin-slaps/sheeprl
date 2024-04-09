@@ -7,21 +7,23 @@ defaults:
   - _self_
 
 # Experiment
-seed: 5
+seed: 7
 
 # Environment
 env:
-  num_envs: 1
+  num_envs: 1 # more is not working rn
   max_episode_steps: 6000
   id: melee
   action_stack: 0
   action_stack_dilation: 0
   capture_video: False
 
+
 # Checkpoint
 checkpoint:
   every: 10000
-  #resume_from: logs/runs/dreamer_v3/melee/2024-04-05_23-03-59_dreamer_v3_melee_5/version_0/checkpoint/ckpt_450000_0.ckpt
+  resume_from: logs/runs/dreamer_v3/melee/2024-04-08_20-46-16_dreamer_v3_melee_7/version_0/checkpoint/ckpt_160000_0.ckpt
+  #resume_from(v1): logs/runs/dreamer_v3/melee/2024-04-08_10-03-57_dreamer_v3_melee_7/version_0/checkpoint/ckpt_80000_0.ckpt
 
 # Buffer
 buffer:

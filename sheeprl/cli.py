@@ -237,12 +237,14 @@ def get_trained_agent_inner(cfg: DictConfig):
     command = task.__dict__[entrypoint]
 
     def no_grad(func):
-            def wrapper(*args, **kwargs):
-                with torch.no_grad():
-                    return func(*args, **kwargs)
+        def wrapper(*args, **kwargs):
+            with torch.no_grad():
+                return func(*args, **kwargs)
 
-            return wrapper
+        return wrapper
     command = no_grad(command)
+    #return fabric.laun(command, cfg, state)
+
     return fabric.launch(command, cfg, state)
 
 
