@@ -20,10 +20,12 @@ import torch
 import threading
 import multiprocessing.shared_memory as shm
 
-# clean this up
+# clean this up (old)
 trained_against_NOOP_bots_checkpoint_path_v0 = "/home/sam/dev/sheeprl/logs/runs/dreamer_v3/melee/2024-04-07_22-18-40_dreamer_v3_melee_5/version_0/checkpoint/ckpt_530000_0.ckpt"
-
 v1_trained_against_v0 = "/home/sam/dev/sheeprl/logs/runs/dreamer_v3/melee/2024-04-08_20-46-16_dreamer_v3_melee_7/version_0/checkpoint/ckpt_160000_0.ckpt"
+
+# current
+v2_trained_against_v1 = "/home/sam/dev/sheeprl/logs/runs/dreamer_v3/melee/2024-04-09_07-26-56_dreamer_v3_melee_7/version_0/checkpoint/ckpt_420000_0.ckpt"
 
 def get_config(checkpoint_path, 
                 capture_video = False,
@@ -64,7 +66,7 @@ class MeleeWrapper(gym.Wrapper):
         
         
         # load trained agent stuff
-        trained_agent_generator = get_trained_agent_entrypoint(get_config(v1_trained_against_v0))
+        trained_agent_generator = get_trained_agent_entrypoint(get_config(v2_trained_against_v1))
         trained_agent = trained_agent_generator(
             melee_env.env_v2.MeleeEnv_v2.get_observation_space_v1(2),
             melee_env.env_v2.MeleeEnv_v2.get_action_space_v1(2))
