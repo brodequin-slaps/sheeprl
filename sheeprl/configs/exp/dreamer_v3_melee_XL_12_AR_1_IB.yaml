@@ -1,0 +1,49 @@
+# @package _global_
+
+defaults:
+  - dreamer_v3
+  - override /algo: dreamer_v3_XL
+  - override /env: melee
+  - _self_
+
+# Experiment
+seed: 8
+
+# Environment
+env:
+  num_envs: 1 # more is not working rn
+  max_episode_steps: 6000
+  id: melee
+  action_stack: 1
+  action_stack_dilation: 1
+  capture_video: False
+
+
+# Checkpoint
+checkpoint:
+  keep_last: 1
+  every: 10000
+  #resume_from: logs/runs/dreamer_v3/melee/2024-04-09_07-26-56_dreamer_v3_melee_7/version_0/checkpoint/ckpt_420000_0.ckpt
+  #resume_from(v2): logs/runs/dreamer_v3/melee/2024-04-08_20-46-16_dreamer_v3_melee_7/version_0/checkpoint/ckpt_160000_0.ckpt
+  #resume_from(v1): logs/runs/dreamer_v3/melee/2024-04-08_10-03-57_dreamer_v3_melee_7/version_0/checkpoint/ckpt_80000_0.ckpt
+
+# Buffer
+buffer:
+  size: 100000
+  checkpoint: True
+
+# Algorithm
+algo:
+  learning_starts: 2048
+  total_steps: 10000000
+  train_every: 1
+  per_rank_batch_size: 32
+  per_rank_sequence_length: 64
+  cnn_keys:
+    encoder: []
+    decoder: []
+  mlp_keys:
+    encoder: [action_stack, one_hot_p1, int_obs_p1, float_obs_p1, one_hot_p2, int_obs_p2, float_obs_p2]
+
+fabric:
+  precision: bf16-true

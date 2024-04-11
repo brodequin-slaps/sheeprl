@@ -8,7 +8,7 @@ import numpy as np
 from gymnasium.core import Env, RenderFrame
 
 import gymnasium.spaces as spaces
-
+import melee_env.env_v2
 
 class MaskVelocityWrapper(gym.ObservationWrapper):
     """
@@ -459,7 +459,7 @@ class ActionsAsObservationWrapper(gym.Wrapper):
         elif self._is_multidiscrete:
             low = 0
             high = max(self.action_space.nvec)
-            self._action_shape = len(self.env.nvec.shape)
+            self._action_shape = len(self.env.action_space.shape)
         else:
             low = 0
             high = 1
@@ -501,4 +501,42 @@ class ActionsAsObservationWrapper(gym.Wrapper):
                 action_list.append(one_hot_action)
             actions = np.concatenate(action_list, axis=0)
         #print(actions)
+        return actions.astype(np.float32)
+    
+
+
+class ActionsAsObservationWrapper_multidiscrete_melee_v2(gym.Wrapper):
+    def __init__(self, env: Env, num_stack: int, dilation: int = 1):
+        print('using input buffer')
+        super().__init__(env)
+        self._num_stack = num_stack
+        self._dilation = dilation
+        self._actions = deque(maxlen=num_stack * dilation)
+        self.observation_space = copy.deepcopy(self.env.observation_space)
+
+        self.observation_space["action_stack"] = copy.deepcopy(self.env.action_space)
+
+    def fill_input_buf(self):
+        [self._actions.append(np.zeros()) for _ in range(self._num_stack)]
+
+    def step(self, action: Any) -> Tuple[Any | SupportsFloat | bool | Dict[str, Any]]:
+        this_frame_action = self._actions[0]
+        self._actions.append(action)
+        obs, reward, done, truncated, info = super().step(this_frame_action)
+        obs["action_stack"] = self._get_actions_stack()
+        #print('this frame action ' + str(this_frame_action))
+        #print('action buf = ' + str(self._actions))
+        return obs, reward, done, truncated, info
+
+    def reset(self, *, seed: int | None = None, options: Dict[str, Any] | None = None) -> Tuple[Any | Dict[str, Any]]:
+        obs, info = super().reset(seed=seed, options=options)
+        obs["action_stack"] = self._get_actions_stack()
+        return obs, info
+
+    def _get_actions_stack(self) -> np.ndarray:
+        if len(self._actions) < self.num_stack:
+            self.fill_input_buf()
+
+        actions_stack = list(self._actions)
+        actions = np.concatenate(actions_stack, axis=0)
         return actions.astype(np.float32)

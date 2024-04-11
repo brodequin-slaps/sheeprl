@@ -66,13 +66,16 @@ class MeleeWrapper(gym.Wrapper):
         
         
         # load trained agent stuff
-        trained_agent_generator = get_trained_agent_entrypoint(get_config(v2_trained_against_v1))
-        trained_agent = trained_agent_generator(
-            melee_env.env_v2.MeleeEnv_v2.get_observation_space_v1(2),
-            melee_env.env_v2.MeleeEnv_v2.get_action_space_v1(2))
+        #trained_agent_generator = get_trained_agent_entrypoint(get_config(v2_trained_against_v1))
+        #trained_agent = trained_agent_generator(
+        #    melee_env.env_v2.MeleeEnv_v2.get_observation_space_v1(2),
+        #    melee_env.env_v2.MeleeEnv_v2.get_action_space_v1(2))
         
-        def trained_agent_fn(obs):
-            return trained_agent.act(obs)
+        #def trained_agent_fn(obs):
+        #    return trained_agent.act(obs)
+        
+        def random_agent_fn(obs):
+            return self.action_space.sample()
 
         
         players = [
@@ -81,7 +84,8 @@ class MeleeWrapper(gym.Wrapper):
               logical_to_libmelee_inputs_v1.logical_to_libmelee_inputs_v1, 
               agent_type.step_controlled_AI), 
             melee_env.agents.basic.trained_ai(gamestate_to_obs_v1.gamestate_to_obs_v1,
-                trained_agent_fn,
+                #trained_agent_fn,
+                random_agent_fn,
                 raw_to_logical_inputs_v1.raw_to_logical_inputs_v1, 
                 logical_to_libmelee_inputs_v1.logical_to_libmelee_inputs_v1,
                 agent_type.enemy_controlled_AI, 12)]
@@ -101,7 +105,7 @@ class MeleeWrapper(gym.Wrapper):
             fast_forward=True, 
             shuffle_controllers_after_each_game=True, 
             randomize_character=True, 
-            randomize_stage=True, 
+            randomize_stage=False, 
             num_players=2, 
             action_repeat=12, 
             max_match_steps=60*60*8,

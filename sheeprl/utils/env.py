@@ -10,6 +10,7 @@ import numpy as np
 from sheeprl.envs.wrappers import (
     ActionRepeat,
     ActionsAsObservationWrapper,
+    ActionsAsObservationWrapper_multidiscrete_melee_v2,
     InputBuffer_Atari,
     InputBufferWtihActionsAsInput_Atari,
     InputBufferWtihActionsAsInput_Atari_v2,
@@ -232,6 +233,7 @@ def make_env(
                     "The actions stack dilation argument must be greater than zero, "
                     f"got: {cfg.env.action_stack_dilation}"
                 )
+            #ActionsAsObservationWrapper_multidiscrete_melee_v2(env, cfg.env.action_stack, cfg.env.action_stack_dilation)
             env = ActionsAsObservationWrapper(env, cfg.env.action_stack, cfg.env.action_stack_dilation)
 
         if cfg.env.reward_as_observation:
