@@ -243,8 +243,7 @@ def get_trained_agent_inner(cfg: DictConfig):
 
         return wrapper
     command = no_grad(command)
-    #return fabric.laun(command, cfg, state)
-
+    
     return fabric.launch(command, cfg, state)
 
 
@@ -299,6 +298,42 @@ def get_trained_agent_entrypoint(cfg):
             "num_nodes": 1,
             "strategy": "auto",
             "accelerator": getattr(cfg.fabric, "accelerator", "auto"),
+        }
+        cfg.root_dir = str(checkpoint_path.parent.parent.parent.parent)
+
+        # Merge configs
+        ckpt_cfg.merge_with(cfg)
+
+        # Update values after merge
+        run_name = Path(
+            os.path.join(
+                os.path.basename(checkpoint_path.parent.parent.parent),
+                os.path.basename(checkpoint_path.parent.parent),
+                "evaluation",
+            )
+        )
+        ckpt_cfg.run_name = str(run_name)
+
+    # Check the validity of the configuration and run the evaluation
+    check_configs_evaluation(ckpt_cfg)
+    return get_trained_agent_inner(ckpt_cfg)
+
+def get_trained_agent_entrypoint_multienv(cfg, num_envs):
+    # Load the checkpoint configuration
+    checkpoint_path = Path(os.path.abspath(cfg.checkpoint_path))
+    ckpt_cfg = OmegaConf.load(checkpoint_path.parent.parent / "config.yaml")
+    ckpt_cfg.pop("seed", None) # todo: why?
+
+    # Merge the two configs
+    with open_dict(cfg):
+        cfg.env = {"capture_video": False, "num_envs": num_envs}
+        cfg.exp = {}
+        cfg.algo = {}
+        cfg.fabric = {
+            "devices": 1,
+            "num_nodes": 1,
+            "strategy": "auto",
+            "accelerator": getattr(cfg.fabric, "accelerator", "cpu"),
         }
         cfg.root_dir = str(checkpoint_path.parent.parent.parent.parent)
 

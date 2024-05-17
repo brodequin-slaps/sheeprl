@@ -45,6 +45,7 @@ from sheeprl.utils.utils import polynomial_decay, save_configs
 # os.environ["PYOPENGL_PLATFORM"] = ""
 # os.environ["MUJOCO_GL"] = "osmesa"
 
+from itertools import islice
 
 def train(
     fabric: Fabric,
@@ -597,6 +598,13 @@ def main(fabric: Fabric, cfg: Dict[str, Any]):
             ):
                 real_actions = actions = np.array(envs.action_space.sample())
                 if not is_continuous:
+                    #actions = np.concatenate(
+                    #    [
+                    #        F.one_hot(torch.as_tensor(act), act_dim).numpy()
+                    #        for act, act_dim in zip(actions.T.reshape(-1, len(actions_dim)), actions_dim)
+                    #    ],
+                    #    axis=-1,
+                    #)
                     actions = np.concatenate(
                         [
                             F.one_hot(torch.as_tensor(act), act_dim).numpy()

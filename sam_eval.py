@@ -6,7 +6,7 @@ from sheeprl.utils.env import make_env
 from sheeprl.utils.timer import timer
 from torchmetrics import MaxMetric, MeanMetric, CatMetric
 
-test_path = "logs/runs/dreamer_v3/MsPacmanNoFrameskip-v4/2024-03-14_20-31-19_dreamer_v3_MsPacmanNoFrameskip-v4_5/version_0/checkpoint/ckpt_600000_0.ckpt"
+test_path = "logs/runs/dreamer_v3/MsPacmanNoFrameskip-v4/2024-04-18_08-13-05_dreamer_v3_MsPacmanNoFrameskip-v4_5/version_0/checkpoint/ckpt_1152_0.ckpt"
 
 def get_config(checkpoint_path, 
                 capture_video = False,

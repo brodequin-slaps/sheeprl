@@ -173,3 +173,7 @@ mlartifacts
 examples/models
 session_*
 bin/
+
+events.out*
+ckpt_*
+.venv311/*

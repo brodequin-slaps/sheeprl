@@ -12,7 +12,9 @@ from sheeprl.utils.logger import get_log_dir, get_logger
 from sheeprl.utils.registry import register_evaluation
 
 import torch
+import numpy as np
 
+# sam_get_trained_agent
 def get_trained_agent(fabric: Fabric, cfg: Dict[str, Any], state: Dict[str, Any]):
     logger = get_logger(fabric, cfg)
     if logger and fabric.is_global_zero:
@@ -62,7 +64,7 @@ def get_trained_agent(fabric: Fabric, cfg: Dict[str, Any], state: Dict[str, Any]
             )
 
             self.cfg = cfg
-            self.player.num_envs = 1
+            self.player.num_envs = cfg.env.num_envs
             self.player.init_states()
             self.device = fabric.device
 
@@ -89,6 +91,30 @@ def get_trained_agent(fabric: Fabric, cfg: Dict[str, Any], state: Dict[str, Any]
                 real_actions = torch.cat([real_act.argmax(dim=-1) for real_act in real_actions], dim=-1).cpu().numpy()
 
             reshaped_actions = real_actions.reshape(self.action_space.shape)
+            return reshaped_actions
+        
+        @torch.no_grad()
+        def act_v2(self, obs):
+            preprocessed_obs = {}
+            for k, v in obs.items():
+                preprocessed_obs[k] = torch.as_tensor(v[np.newaxis], dtype=torch.float32, device=self.device)
+                if k in cfg.algo.cnn_keys.encoder:
+                    preprocessed_obs[k] = preprocessed_obs[k] / 255.0 - 0.5
+            mask = {k: v for k, v in preprocessed_obs.items() if k.startswith("mask")}
+            if len(mask) == 0:
+                mask = None
+            
+            real_actions = self.player.get_greedy_action(
+                    preprocessed_obs, False, mask
+            )
+
+            if self.player.actor.is_continuous:
+                real_actions = torch.cat(real_actions, -1).cpu().numpy()
+            else:
+                real_actions = torch.cat([real_act.argmax(dim=-1) for real_act in real_actions], dim=-1).cpu().numpy()
+
+            #reshaped_actions = real_actions.reshape(self.action_space.shape)
+            reshaped_actions = real_actions.reshape(-1, cfg.env.num_envs).T
             return reshaped_actions
     
     def trained_agent_generator(obs_space, action_space):

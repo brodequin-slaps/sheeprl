@@ -5,7 +5,8 @@ defaults:
 id: melee
 
 wrapper:
-  _target_: sheeprl.envs.melee.MeleeWrapper
+  _target_: sheeprl.envs.melee.MeleeWrapper_multienv
   id: ${env.id}
-  #screen_size: ${env.screen_size}
+  render_mode: rgb_array
+  screen_size: 64
   seed: ${seed}

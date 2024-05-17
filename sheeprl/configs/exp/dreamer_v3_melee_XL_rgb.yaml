@@ -2,7 +2,7 @@
 
 defaults:
   - dreamer_v3
-  - override /algo: dreamer_v3_XL
+  - override /algo: dreamer_v3_S
   - override /env: melee
   - _self_
 
@@ -21,13 +21,13 @@ env:
 
 # Checkpoint
 checkpoint:
-  every: 10000
+  every: 1000
   keep_last: 1
   #resume_from: trained_agent_checkpoint/2024-04-19_18-42-53_dreamer_v3_melee_7/version_0/checkpoint/ckpt_1550000_0.ckpt
 
 # Buffer
 buffer:
-  size: 200000
+  size: 100000
   checkpoint: True
 
 # Algorithm
@@ -35,13 +35,13 @@ algo:
   learning_starts: 512
   total_steps: 10000000
   train_every: 3
-  per_rank_batch_size: 6
+  per_rank_batch_size: 40
   per_rank_sequence_length: 64
   cnn_keys:
-    encoder: []
-    decoder: []
+    encoder: [rgb]
+    decoder: [rgb]
   mlp_keys:
-    encoder: [one_hot_p1, int_obs_p1, float_obs_p1, one_hot_p2, int_obs_p2, float_obs_p2]
+    encoder: [int_obs_p1, float_obs_p1, int_obs_p2, float_obs_p2, match_completion_ratio]
 
 fabric:
-  precision: 32
+  precision: bf16-true

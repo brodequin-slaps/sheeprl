@@ -9,6 +9,7 @@ from gymnasium.core import Env, RenderFrame
 
 import gymnasium.spaces as spaces
 
+import traceback
 
 class MaskVelocityWrapper(gym.ObservationWrapper):
     """
@@ -284,6 +285,9 @@ class RestartOnException(gym.Wrapper):
             if self._fails > self._maxfails:
                 raise RuntimeError(f"The env crashed too many times: {self._fails}")
             gym.logger.warn(f"STEP - Restarting env after crash with {type(e).__name__}: {e}")
+            #gym.logger.warn(f"STEP - Restarting env after crash with {e.__traceback__}: {e}")
+            traceback.print_exc()
+            #print(''.join(traceback.format_exception(value=e, tb=e.__traceback__)))
             time.sleep(self._wait)
             self.env = self._env_fn()
             new_obs, info = self.env.reset()
@@ -467,6 +471,7 @@ class ActionsAsObservationWrapper(gym.Wrapper):
         self.observation_space["action_stack"] = gym.spaces.Box(
             low=low, high=high, shape=(self._action_shape * num_stack,), dtype=np.float32
         )
+        print('ActionsAsObservationWrapper')
 
     def step(self, action: Any) -> Tuple[Any | SupportsFloat | bool | Dict[str, Any]]:
         this_frame_action = self._actions[0]
@@ -500,5 +505,4 @@ class ActionsAsObservationWrapper(gym.Wrapper):
                 one_hot_action[action] = 1
                 action_list.append(one_hot_action)
             actions = np.concatenate(action_list, axis=0)
-        #print(actions)
         return actions.astype(np.float32)
