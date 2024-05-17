@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import copy
 import os
-import time
 import warnings
 from typing import Any, Dict, Optional, Union
 
@@ -22,7 +21,7 @@ from torchmetrics import SumMetric
 
 from sheeprl.algos.sac.loss import critic_loss, entropy_loss, policy_loss
 from sheeprl.algos.sac_ae.agent import SACAEAgent, build_agent
-from sheeprl.algos.sac_ae.utils import preprocess_obs, test
+from sheeprl.algos.sac_ae.utils import prepare_obs, preprocess_obs, test
 from sheeprl.data.buffers import ReplayBuffer
 from sheeprl.models.models import MultiDecoder, MultiEncoder
 from sheeprl.utils.env import make_env
@@ -30,7 +29,7 @@ from sheeprl.utils.logger import get_log_dir, get_logger
 from sheeprl.utils.metric import MetricAggregator
 from sheeprl.utils.registry import register_algorithm
 from sheeprl.utils.timer import timer
-from sheeprl.utils.utils import save_configs
+from sheeprl.utils.utils import Ratio, save_configs
 
 
 def train(
@@ -45,16 +44,12 @@ def train(
     decoder_optimizer: Optimizer,
     data: Dict[str, Tensor],
     aggregator: MetricAggregator | None,
-    update: int,
+    cumulative_per_rank_gradient_steps: int,
     cfg: Dict[str, Any],
-    policy_steps_per_update: int,
     group: Optional[CollectibleGroup] = None,
 ):
-    critic_target_network_frequency = cfg.algo.critic.target_network_frequency // policy_steps_per_update + 1
-    actor_network_frequency = cfg.algo.actor.network_frequency // policy_steps_per_update + 1
-    decoder_update_freq = cfg.algo.decoder.update_freq // policy_steps_per_update + 1
-    normalized_obs = {}
     normalized_next_obs = {}
+    normalized_obs = {}
     for k in cfg.algo.cnn_keys.encoder + cfg.algo.mlp_keys.encoder:
         if k in cfg.algo.cnn_keys.encoder:
             normalized_obs[k] = data[k] / 255.0
@@ -65,7 +60,7 @@ def train(
 
     # Update the soft-critic
     next_target_qf_value = agent.get_next_target_q_values(
-        normalized_next_obs, data["rewards"], data["dones"], cfg.algo.gamma
+        normalized_next_obs, data["rewards"], data["terminated"], cfg.algo.gamma
     )
     qf_values = agent.get_q_values(normalized_obs, data["actions"])
     qf_loss = critic_loss(qf_values, next_target_qf_value, agent.num_critics)
@@ -76,12 +71,12 @@ def train(
         aggregator.update("Loss/value_loss", qf_loss)
 
     # Update the target networks with EMA
-    if update % critic_target_network_frequency == 0:
+    if cumulative_per_rank_gradient_steps % cfg.algo.critic.per_rank_target_network_update_freq == 0:
         agent.critic_target_ema()
         agent.critic_encoder_target_ema()
 
     # Update the actor
-    if update % actor_network_frequency == 0:
+    if cumulative_per_rank_gradient_steps % cfg.algo.actor.per_rank_update_freq == 0:
         actions, logprobs = agent.get_actions_and_log_probs(normalized_obs, detach_encoder_features=True)
         qf_values = agent.get_q_values(normalized_obs, actions, detach_encoder_features=True)
         min_qf_values = torch.min(qf_values, dim=-1, keepdim=True)[0]
@@ -102,7 +97,7 @@ def train(
             aggregator.update("Loss/alpha_loss", alpha_loss)
 
     # Update the decoder
-    if update % decoder_update_freq == 0:
+    if cumulative_per_rank_gradient_steps % cfg.algo.decoder.per_rank_update_freq == 0:
         hidden = encoder(normalized_obs)
         reconstruction = decoder(hidden)
         reconstruction_loss = 0
@@ -198,7 +193,7 @@ def main(fabric: Fabric, cfg: Dict[str, Any]):
     obs_keys = cfg.algo.cnn_keys.encoder + cfg.algo.mlp_keys.encoder
 
     # Define the agent and the optimizer and setup them with Fabric
-    agent, encoder, decoder = build_agent(
+    agent, encoder, decoder, player = build_agent(
         fabric,
         cfg,
         observation_space,
@@ -209,16 +204,30 @@ def main(fabric: Fabric, cfg: Dict[str, Any]):
     )
 
     # Optimizers
-    qf_optimizer = hydra.utils.instantiate(cfg.algo.critic.optimizer, params=agent.critic.parameters(), _convert_="all")
-    actor_optimizer = hydra.utils.instantiate(
-        cfg.algo.actor.optimizer, params=agent.actor.parameters(), _convert_="all"
+    qf_optimizer = hydra.utils.instantiate(
+        cfg.algo.critic.optimizer,
+        params=agent.critic.parameters(),
+        _convert_="all",
     )
-    alpha_optimizer = hydra.utils.instantiate(cfg.algo.alpha.optimizer, params=[agent.log_alpha], _convert_="all")
+    actor_optimizer = hydra.utils.instantiate(
+        cfg.algo.actor.optimizer,
+        params=agent.actor.parameters(),
+        _convert_="all",
+    )
+    alpha_optimizer = hydra.utils.instantiate(
+        cfg.algo.alpha.optimizer,
+        params=[agent.log_alpha],
+        _convert_="all",
+    )
     encoder_optimizer = hydra.utils.instantiate(
-        cfg.algo.encoder.optimizer, params=encoder.parameters(), _convert_="all"
+        cfg.algo.encoder.optimizer,
+        params=encoder.parameters(),
+        _convert_="all",
     )
     decoder_optimizer = hydra.utils.instantiate(
-        cfg.algo.decoder.optimizer, params=decoder.parameters(), _convert_="all"
+        cfg.algo.decoder.optimizer,
+        params=decoder.parameters(),
+        _convert_="all",
     )
 
     if cfg.checkpoint.resume_from:
@@ -261,40 +270,45 @@ def main(fabric: Fabric, cfg: Dict[str, Any]):
     # Global variables
     last_train = 0
     train_step = 0
-    start_step = (
+    start_iter = (
         # + 1 because the checkpoint is at the end of the update step
         # (when resuming from a checkpoint, the update at the checkpoint
         # is ended and you have to start with the next one)
-        (state["update"] // fabric.world_size) + 1
+        (state["iter_num"] // fabric.world_size) + 1
         if cfg.checkpoint.resume_from
         else 1
     )
-    policy_step = state["update"] * cfg.env.num_envs if cfg.checkpoint.resume_from else 0
+    policy_step = state["iter_num"] * cfg.env.num_envs if cfg.checkpoint.resume_from else 0
     last_log = state["last_log"] if cfg.checkpoint.resume_from else 0
     last_checkpoint = state["last_checkpoint"] if cfg.checkpoint.resume_from else 0
-    time.time()
-    policy_steps_per_update = int(cfg.env.num_envs * fabric.world_size)
-    num_updates = int(cfg.algo.total_steps // policy_steps_per_update) if not cfg.dry_run else 1
-    learning_starts = cfg.algo.learning_starts // policy_steps_per_update if not cfg.dry_run else 0
+    policy_steps_per_iter = int(cfg.env.num_envs * fabric.world_size)
+    total_iters = int(cfg.algo.total_steps // policy_steps_per_iter) if not cfg.dry_run else 1
+    learning_starts = cfg.algo.learning_starts // policy_steps_per_iter if not cfg.dry_run else 0
+    prefill_steps = learning_starts - int(learning_starts > 0)
     if cfg.checkpoint.resume_from:
         cfg.algo.per_rank_batch_size = state["batch_size"] // fabric.world_size
-        if not cfg.buffer.checkpoint:
-            learning_starts += start_step
+        learning_starts += start_iter
+        prefill_steps += start_iter
+
+    # Create Ratio class
+    ratio = Ratio(cfg.algo.replay_ratio, pretrain_steps=cfg.algo.per_rank_pretrain_steps)
+    if cfg.checkpoint.resume_from:
+        ratio.load_state_dict(state["ratio"])
 
     # Warning for log and checkpoint every
-    if cfg.metric.log_level > 0 and cfg.metric.log_every % policy_steps_per_update != 0:
+    if cfg.metric.log_level > 0 and cfg.metric.log_every % policy_steps_per_iter != 0:
         warnings.warn(
             f"The metric.log_every parameter ({cfg.metric.log_every}) is not a multiple of the "
-            f"policy_steps_per_update value ({policy_steps_per_update}), so "
+            f"policy_steps_per_iter value ({policy_steps_per_iter}), so "
             "the metrics will be logged at the nearest greater multiple of the "
-            "policy_steps_per_update value."
+            "policy_steps_per_iter value."
         )
-    if cfg.checkpoint.every % policy_steps_per_update != 0:
+    if cfg.checkpoint.every % policy_steps_per_iter != 0:
         warnings.warn(
             f"The checkpoint.every parameter ({cfg.checkpoint.every}) is not a multiple of the "
-            f"policy_steps_per_update value ({policy_steps_per_update}), so "
+            f"policy_steps_per_iter value ({policy_steps_per_iter}), so "
             "the checkpoint will be saved at the nearest greater multiple of the "
-            "policy_steps_per_update value."
+            "policy_steps_per_iter value."
         )
 
     # Get the first environment observation and start the optimization
@@ -304,22 +318,21 @@ def main(fabric: Fabric, cfg: Dict[str, Any]):
         if k in cfg.algo.cnn_keys.encoder:
             obs[k] = obs[k].reshape(cfg.env.num_envs, -1, *obs[k].shape[-2:])
 
-    for update in range(start_step, num_updates + 1):
-        policy_step += cfg.env.num_envs * fabric.world_size
+    per_rank_gradient_steps = 0
+    cumulative_per_rank_gradient_steps = 0
+    for iter_num in range(start_iter, total_iters + 1):
+        policy_step += policy_steps_per_iter
 
         # Measure environment interaction time: this considers both the model forward
         # to get the action given the observation and the time taken into the environment
         with timer("Time/env_interaction_time", SumMetric, sync_on_compute=False):
-            if update < learning_starts:
+            if iter_num <= learning_starts:
                 actions = envs.action_space.sample()
             else:
-                with torch.no_grad():
-                    normalized_obs = {k: v / 255 if k in cfg.algo.cnn_keys.encoder else v for k, v in obs.items()}
-                    torch_obs = {k: torch.from_numpy(v).to(device).float() for k, v in normalized_obs.items()}
-                    actions, _ = agent.actor.module(torch_obs)
-                    actions = actions.cpu().numpy()
-            next_obs, rewards, dones, truncated, infos = envs.step(actions.reshape(envs.action_space.shape))
-            dones = np.logical_or(dones, truncated)
+                with torch.inference_mode():
+                    torch_obs = prepare_obs(fabric, obs, cnn_keys=cfg.algo.cnn_keys.encoder, num_envs=cfg.env.num_envs)
+                    actions = player(torch_obs).cpu().numpy()
+            next_obs, rewards, terminated, truncated, infos = envs.step(actions.reshape(envs.action_space.shape))
 
         if cfg.metric.log_level > 0 and "final_info" in infos:
             for i, agent_ep_info in enumerate(infos["final_info"]):
@@ -351,7 +364,8 @@ def main(fabric: Fabric, cfg: Dict[str, Any]):
                         1, cfg.env.num_envs, -1, *step_data[f"next_{k}"].shape[-2:]
                     )
 
-        step_data["dones"] = dones.reshape(1, cfg.env.num_envs, -1).astype(np.float32)
+        step_data["terminated"] = terminated.reshape(1, cfg.env.num_envs, -1).astype(np.float32)
+        step_data["truncated"] = truncated.reshape(1, cfg.env.num_envs, -1).astype(np.float32)
         step_data["actions"] = actions.reshape(1, cfg.env.num_envs, -1).astype(np.float32)
         step_data["rewards"] = rewards.reshape(1, cfg.env.num_envs, -1).astype(np.float32)
         rb.add(step_data, validate_args=cfg.buffer.validate_args)
@@ -360,75 +374,81 @@ def main(fabric: Fabric, cfg: Dict[str, Any]):
         obs = next_obs
 
         # Train the agent
-        if update >= learning_starts - 1:
-            training_steps = learning_starts if update == learning_starts - 1 else 1
-
-            # We sample one time to reduce the communications between processes
-            sample = rb.sample_tensors(
-                training_steps * cfg.algo.per_rank_gradient_steps * cfg.algo.per_rank_batch_size,
-                sample_next_obs=cfg.buffer.sample_next_obs,
-                from_numpy=cfg.buffer.from_numpy,
-            )  # [G*B, 1]
-            gathered_data = fabric.all_gather(sample)  # [G*B, World, 1]
-            flatten_dim = 3 if fabric.world_size > 1 else 2
-            gathered_data = {k: v.view(-1, *v.shape[flatten_dim:]) for k, v in gathered_data.items()}  # [G*B*World]
-            len_data = len(gathered_data[next(iter(gathered_data.keys()))])
-            if fabric.world_size > 1:
-                dist_sampler: DistributedSampler = DistributedSampler(
-                    range(len_data),
-                    num_replicas=fabric.world_size,
-                    rank=fabric.global_rank,
-                    shuffle=True,
-                    seed=cfg.seed,
-                    drop_last=False,
-                )
-                sampler: BatchSampler = BatchSampler(
-                    sampler=dist_sampler, batch_size=cfg.algo.per_rank_batch_size, drop_last=False
-                )
-            else:
-                sampler = BatchSampler(
-                    sampler=range(len_data), batch_size=cfg.algo.per_rank_batch_size, drop_last=False
-                )
-
-            # Start training
-            with timer("Time/train_time", SumMetric, sync_on_compute=cfg.metric.sync_on_compute):
-                for batch_idxes in sampler:
-                    train(
-                        fabric,
-                        agent,
-                        encoder,
-                        decoder,
-                        actor_optimizer,
-                        qf_optimizer,
-                        alpha_optimizer,
-                        encoder_optimizer,
-                        decoder_optimizer,
-                        {k: v[batch_idxes] for k, v in gathered_data.items()},
-                        aggregator,
-                        update,
-                        cfg,
-                        policy_steps_per_update,
+        if iter_num >= learning_starts:
+            ratio_steps = policy_step - prefill_steps * policy_steps_per_iter
+            per_rank_gradient_steps = ratio(ratio_steps / world_size)
+            if per_rank_gradient_steps > 0:
+                # We sample one time to reduce the communications between processes
+                sample = rb.sample_tensors(
+                    per_rank_gradient_steps * cfg.algo.per_rank_batch_size,
+                    sample_next_obs=cfg.buffer.sample_next_obs,
+                    from_numpy=cfg.buffer.from_numpy,
+                )  # [1, G*B]
+                gathered_data: Dict[str, torch.Tensor] = fabric.all_gather(sample)  # [World, 1, G*B]
+                for k, v in gathered_data.items():
+                    gathered_data[k] = v.flatten(start_dim=0, end_dim=2).float()  # [G*B*World]
+                len_data = len(gathered_data[next(iter(gathered_data.keys()))])
+                if fabric.world_size > 1:
+                    dist_sampler: DistributedSampler = DistributedSampler(
+                        range(len_data),
+                        num_replicas=fabric.world_size,
+                        rank=fabric.global_rank,
+                        shuffle=True,
+                        seed=cfg.seed,
+                        drop_last=False,
                     )
-                train_step += world_size
+                    sampler: BatchSampler = BatchSampler(
+                        sampler=dist_sampler, batch_size=cfg.algo.per_rank_batch_size, drop_last=False
+                    )
+                else:
+                    sampler = BatchSampler(
+                        sampler=range(len_data), batch_size=cfg.algo.per_rank_batch_size, drop_last=False
+                    )
+
+                # Start training
+                with timer("Time/train_time", SumMetric, sync_on_compute=cfg.metric.sync_on_compute):
+                    for batch_idxes in sampler:
+                        train(
+                            fabric,
+                            agent,
+                            encoder,
+                            decoder,
+                            actor_optimizer,
+                            qf_optimizer,
+                            alpha_optimizer,
+                            encoder_optimizer,
+                            decoder_optimizer,
+                            {k: v[batch_idxes] for k, v in gathered_data.items()},
+                            aggregator,
+                            cumulative_per_rank_gradient_steps,
+                            cfg,
+                        )
+                        cumulative_per_rank_gradient_steps += 1
+                    train_step += world_size
 
         # Log metrics
-        if cfg.metric.log_level and (policy_step - last_log >= cfg.metric.log_every or update == num_updates):
+        if cfg.metric.log_level and (policy_step - last_log >= cfg.metric.log_every or iter_num == total_iters):
             # Sync distributed metrics
             if aggregator and not aggregator.disabled:
                 metrics_dict = aggregator.compute()
                 fabric.log_dict(metrics_dict, policy_step)
                 aggregator.reset()
 
+            # Log replay ratio
+            fabric.log(
+                "Params/replay_ratio", cumulative_per_rank_gradient_steps * world_size / policy_step, policy_step
+            )
+
             # Sync distributed timers
             if not timer.disabled:
                 timer_metrics = timer.compute()
-                if "Time/train_time" in timer_metrics:
+                if "Time/train_time" in timer_metrics and timer_metrics["Time/train_time"] > 0:
                     fabric.log(
                         "Time/sps_train",
                         (train_step - last_train) / timer_metrics["Time/train_time"],
                         policy_step,
                     )
-                if "Time/env_interaction_time" in timer_metrics:
+                if "Time/env_interaction_time" in timer_metrics and timer_metrics["Time/env_interaction_time"] > 0:
                     fabric.log(
                         "Time/sps_env_interaction",
                         ((policy_step - last_log) / world_size * cfg.env.action_repeat)
@@ -443,7 +463,7 @@ def main(fabric: Fabric, cfg: Dict[str, Any]):
 
         # Checkpoint model
         if (cfg.checkpoint.every > 0 and policy_step - last_checkpoint >= cfg.checkpoint.every) or (
-            update == num_updates and cfg.checkpoint.save_last
+            iter_num == total_iters and cfg.checkpoint.save_last
         ):
             last_checkpoint = policy_step
             state = {
@@ -455,7 +475,8 @@ def main(fabric: Fabric, cfg: Dict[str, Any]):
                 "alpha_optimizer": alpha_optimizer.state_dict(),
                 "encoder_optimizer": encoder_optimizer.state_dict(),
                 "decoder_optimizer": decoder_optimizer.state_dict(),
-                "update": update * fabric.world_size,
+                "ratio": ratio.state_dict(),
+                "iter_num": iter_num * fabric.world_size,
                 "batch_size": cfg.algo.per_rank_batch_size * fabric.world_size,
                 "last_log": last_log,
                 "last_checkpoint": last_checkpoint,
@@ -471,7 +492,7 @@ def main(fabric: Fabric, cfg: Dict[str, Any]):
 
     envs.close()
     if fabric.is_global_zero and cfg.algo.run_test:
-        test(agent.actor.module, fabric, cfg, log_dir)
+        test(player, fabric, cfg, log_dir)
 
     if not cfg.model_manager.disabled and fabric.is_global_zero:
         from sheeprl.algos.sac_ae.utils import log_models

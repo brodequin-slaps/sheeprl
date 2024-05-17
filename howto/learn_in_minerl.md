@@ -17,6 +17,10 @@ Now, you can install the MineRL environment:
 pip install -e .[minerl]
 ```
 
+> [!WARNING]
+>
+> If you run into any problems during the installation due to some missing files that are not downloaded, please have a look at [this issue](https://github.com/MineDojo/MineDojo/issues/113).
+
 ## MineRL environments
 We have modified the MineRL environments to have a custom action and observation space. We provide three different tasks:
 1. Navigate: you need to set the `env.id` argument to `custom_navigate`.
@@ -47,9 +51,14 @@ In addition, we added the forward action when the agent selects one of the follo
 Finally, we added sticky actions for the `jump` and `attack` actions. You can set the values of the `sticky_jump` and `sticky_attack` parameters through the `env.sticky_jump` and `env.sticky_attack` arguments, respectively. The sticky actions, if set, force the agent to repeat the selected actions for a certain number of steps.
 
 > [!NOTE]
+>
 > Since the MineRL environments have a multi-discrete action space, the sticky actions can be easily implemented. The agent will perform the selected action and the sticky actions simultaneously.
 >
 > The action repeat in the Minecraft environments is set to 1, indeed, It makes no sense to force the agent to repeat an action such as crafting (it may not have enough material for the second action).
+
+> [!NOTE]
+>
+> The `env.sticky_attack` parameter is set to `0` if the `env.break_speed_multiplier > 1`.
 
 ## Headless machines
 

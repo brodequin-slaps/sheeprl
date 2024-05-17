@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional, SupportsFloat, Tuple
 
 import gymnasium as gym
 import minedojo
+import minedojo.tasks
 import numpy as np
 from gymnasium.core import RenderFrame
 from minedojo.sim import ALL_CRAFT_SMELT_ITEMS, ALL_ITEMS
@@ -39,6 +40,7 @@ ACTION_MAP = {
 }
 ITEM_ID_TO_NAME = dict(enumerate(ALL_ITEMS))
 ITEM_NAME_TO_ID = dict(zip(ALL_ITEMS, range(N_ALL_ITEMS)))
+ALL_TASKS_SPECS = copy.deepcopy(minedojo.tasks.ALL_TASKS_SPECS)
 
 # Minedojo functional actions:
 # 0: noop
@@ -67,9 +69,9 @@ class MineDojoWrapper(gym.Wrapper):
         self._width = width
         self._pitch_limits = pitch_limits
         self._pos = kwargs.get("start_position", None)
-        self._break_speed_multiplier = kwargs.get("break_speed_multiplier", 100)
+        self._break_speed_multiplier = kwargs.pop("break_speed_multiplier", 100)
         self._start_pos = copy.deepcopy(self._pos)
-        self._sticky_attack = sticky_attack
+        self._sticky_attack = 0 if self._break_speed_multiplier > 1 else sticky_attack
         self._sticky_jump = sticky_jump
         self._sticky_attack_counter = 0
         self._sticky_jump_counter = 0
@@ -83,8 +85,8 @@ class MineDojoWrapper(gym.Wrapper):
             task_id=id,
             image_size=(height, width),
             world_seed=seed,
-            generate_world_type="default",
             fast_reset=True,
+            break_speed_multiplier=self._break_speed_multiplier,
             **kwargs,
         )
         super().__init__(env)
@@ -110,6 +112,7 @@ class MineDojoWrapper(gym.Wrapper):
         )
         self._render_mode: str = "rgb_array"
         self.seed(seed=seed)
+        minedojo.tasks.ALL_TASKS_SPECS = copy.deepcopy(ALL_TASKS_SPECS)
 
     @property
     def render_mode(self) -> str | None:
@@ -245,6 +248,9 @@ class MineDojoWrapper(gym.Wrapper):
             action[3] = 12
 
         obs, reward, done, info = self.env.step(action)
+        is_timelimit = info.get("TimeLimit.truncated", False)
+        terminated = done and not is_timelimit
+        truncated = done and is_timelimit
         self._pos = {
             "x": float(obs["location_stats"]["pos"][0]),
             "y": float(obs["location_stats"]["pos"][1]),
@@ -252,17 +258,19 @@ class MineDojoWrapper(gym.Wrapper):
             "pitch": float(obs["location_stats"]["pitch"].item()),
             "yaw": float(obs["location_stats"]["yaw"].item()),
         }
-        info = {
-            "life_stats": {
-                "life": float(obs["life_stats"]["life"].item()),
-                "oxygen": float(obs["life_stats"]["oxygen"].item()),
-                "food": float(obs["life_stats"]["food"].item()),
-            },
-            "location_stats": copy.deepcopy(self._pos),
-            "action": a.tolist(),
-            "biomeid": float(obs["location_stats"]["biome_id"].item()),
-        }
-        return self._convert_obs(obs), reward, done, False, info
+        info.update(
+            {
+                "life_stats": {
+                    "life": float(obs["life_stats"]["life"].item()),
+                    "oxygen": float(obs["life_stats"]["oxygen"].item()),
+                    "food": float(obs["life_stats"]["food"].item()),
+                },
+                "location_stats": copy.deepcopy(self._pos),
+                "action": a.tolist(),
+                "biomeid": float(obs["location_stats"]["biome_id"].item()),
+            }
+        )
+        return self._convert_obs(obs), reward, terminated, truncated, info
 
     def reset(
         self, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None

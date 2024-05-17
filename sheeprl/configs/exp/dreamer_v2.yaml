@@ -23,7 +23,7 @@ checkpoint:
 buffer:
   size: 5000000
   type: sequential
-  checkpoint: False
+  checkpoint: True
   prioritize_ends: False
 
 # Distribution
@@ -61,9 +61,6 @@ metric:
         _target_: torchmetrics.MeanMetric
         sync_on_compute: ${metric.sync_on_compute}
       State/kl:
-        _target_: torchmetrics.MeanMetric
-        sync_on_compute: ${metric.sync_on_compute}
-      Params/exploration_amount:
         _target_: torchmetrics.MeanMetric
         sync_on_compute: ${metric.sync_on_compute}
       Grads/world_model:

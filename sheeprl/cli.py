@@ -10,6 +10,7 @@ import torch
 from lightning import Fabric
 from lightning.fabric.strategies import STRATEGY_REGISTRY, DDPStrategy, SingleDeviceStrategy, Strategy
 from omegaconf import DictConfig, OmegaConf, open_dict
+from torch.distributions import Distribution
 
 from sheeprl.utils.imports import _IS_MLFLOW_AVAILABLE
 from sheeprl.utils.logger import get_logger
@@ -35,11 +36,19 @@ def resume_from_checkpoint(cfg: DictConfig) -> DictConfig:
             f"Got '{cfg.algo.name}', but the algorithm of the experiment of the checkpoint was {old_cfg.algo.name}. "
             "Set properly the algorithm name for restarting the experiment."
         )
+    if old_cfg.algo.learning_starts > 0:
+        warnings.warn(
+            "The `algo.learning_starts` parameter is greater than zero. "
+            "This means that the resuming experiment will pre-fill the buffer for `algo.learning_starts` steps. "
+            "If this is not intended please set the `algo.learning_starts=0` parameter in the experiment configuration "
+            "or through the CLI."
+        )
 
     # Remove keys from the `old_cfg` that must not be overridden
     old_cfg.pop("root_dir", None)
     old_cfg.pop("run_name", None)
     old_cfg.checkpoint.pop("resume_from", None)
+    old_cfg.algo.pop("learning_starts", None)
     # Substitute the config with the old one (except for the parameters removed before)
     # because the experiment must continue with the same parameters
     with open_dict(cfg):
@@ -57,6 +66,9 @@ def run_algorithm(cfg: Dict[str, Any]):
     # Torch settings
     os.environ["OMP_NUM_THREADS"] = str(cfg.num_threads)
     torch.set_float32_matmul_precision(cfg.float32_matmul_precision)
+
+    # Set the distribution validate_args once here
+    Distribution.set_default_validate_args(cfg.distribution.validate_args)
 
     # Given the algorithm's name, retrieve the module where
     # 'cfg.algo.name'.py is contained; from there retrieve the
@@ -366,6 +378,9 @@ def eval_algorithm(cfg: DictConfig):
     os.environ["OMP_NUM_THREADS"] = str(cfg.num_threads)
     torch.set_float32_matmul_precision(cfg.float32_matmul_precision)
 
+    # Set the distribution validate_args once here
+    Distribution.set_default_validate_args(cfg.distribution.validate_args)
+
     # TODO: change the number of devices when FSDP will be supported
     accelerator = cfg.fabric.get("accelerator", "auto")
     fabric: Fabric = hydra.utils.instantiate(
@@ -431,7 +446,6 @@ def check_configs(cfg: Dict[str, Any]):
             f"Invalid value '{cfg.float32_matmul_precision}' for the 'float32_matmul_precision' parameter. "
             "It must be one of 'medium', 'high' or 'highest'."
         )
-
     decoupled = False
     algo_name = cfg.algo.name
     for _, _algos in algorithm_registry.items():
@@ -491,6 +505,11 @@ def check_configs(cfg: Dict[str, Any]):
             UserWarning,
         )
         cfg.model_manager.disabled = True
+    if cfg.algo.learning_starts is not None and cfg.algo.learning_starts < 0:
+        raise ValueError("The `algo.learning_starts` parameter must be greater or equal to zero.")
+
+    if cfg.env.action_repeat < 1:
+        cfg.env.action_repeat = 1
 
 
 def check_configs_evaluation(cfg: DictConfig):
@@ -499,7 +518,6 @@ def check_configs_evaluation(cfg: DictConfig):
             f"Invalid value '{cfg.float32_matmul_precision}' for the 'float32_matmul_precision' parameter. "
             "It must be one of 'medium', 'high' or 'highest'."
         )
-
     if cfg.checkpoint_path is None:
         raise ValueError("You must specify the evaluation checkpoint path")
 
