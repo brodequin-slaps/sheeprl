@@ -22,7 +22,7 @@ import torch
 import threading
 import multiprocessing.shared_memory as shm
 
-from eval_client_lib import client
+#from eval_client_lib import client
 import pickle
 import socket
 import time

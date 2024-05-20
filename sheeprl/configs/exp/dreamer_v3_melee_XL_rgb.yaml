@@ -27,7 +27,7 @@ checkpoint:
 
 # Buffer
 buffer:
-  size: 100000
+  size: 300000
   checkpoint: True
 
 # Algorithm
@@ -44,4 +44,5 @@ algo:
     encoder: [int_obs_p1, float_obs_p1, int_obs_p2, float_obs_p2, match_completion_ratio]
 
 fabric:
-  precision: bf16-true
+  precision: 32
+  #precision: bf16-true
